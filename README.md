@@ -1,4 +1,4 @@
-Re-implementation of the Thrift Python library for Python
+Re-implementation of the Thrift Python library
 
 Rough goals: 
 
