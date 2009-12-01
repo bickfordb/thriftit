@@ -7,12 +7,12 @@ Rough goals:
  * Simpler libraries (e.g. "thriftit.BinaryCodec()" instead of "thrift.protocol.TBinaryProtocol.TBinaryProtocolFactory()")
  * Try to fit in with Python better.  For eaxmple, use "dump" instead of "write" or "load", and use "underscored_method_names" instead of "camelCase"
  * Sneak in useful features: 
-   * Cyclic structs, e.g.
+   * Cyclic structs, for example:
 
-       struct ConsBuf { 
-            1: binary buf,
-            2: ConsBuf next optional
-        }
+          struct ConsBuf { 
+              1: binary buf,
+              2: ConsBuf next optional
+          }
 
  * Support other alternative encodings where possible (Avro, Protocol Buffers, XDR, YAML, JSON)
  * Tornado plugins
