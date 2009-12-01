@@ -311,7 +311,7 @@ class UnicodeType(Type):
     _thrift_type_id = UTF8
 
 class ByteStringType(Type):
-    """ByteStringType variable length strings"""
+    """Binary variable length strings"""
     _thrift_type_id = STRING
 
 class BooleanType(Type):
@@ -439,7 +439,7 @@ def types_from_config(type_config):
 
     For example, the type configuration for a simple calculator AST might look like the following:
     {
-        "ByteStringTypeExpression": {  
+        "BinaryExpression": {  
             "type": "struct",
             "fields": {
                 "left": {
@@ -464,7 +464,7 @@ def types_from_config(type_config):
                     "tag": 0
                 }
                 "binary_expr": {
-                    "type": "ByteStringTypeExpression",
+                    "type": "BinaryExpression",
                     "tag": 1
                 }
         },
