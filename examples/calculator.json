@@ -1,0 +1,18 @@
+{
+    "Work": {
+        "type": "struct",
+        "fields": [
+            ["num1", "i32"],
+            ["num2", "i32", {"optional": true}],
+            ["foo", "map", {"key": "i32", "value": "i32"}]
+        ]
+    },
+        "Operation": {
+            "type": "enum",
+            "values": [
+                ["BLUE", 99],
+                "RED",
+                "GREEN"
+            ]
+        }
+}
