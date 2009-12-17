@@ -1,4 +1,6 @@
-"""Hopefully less strange version of the Python Thrift encodings/library"""
+"""Alternative version of the Python Thrift encodings/library"""
+
+__author__ = "Brandon Bickford <bickfordb@gmail.com>"
 
 import os
 import sys
@@ -14,23 +16,25 @@ try:
 except ImportError:
     import simplejson as json
 
-STOP   = 0
-VOID   = 1
-BOOL   = 2
-BYTE   = 3
-I08    = 3
-DOUBLE = 4
-I16    = 6
-I32    = 8
-I64    = 10
-STRING = 11
-UTF7   = 11
-STRUCT = 12
-MAP    = 13
-SET    = 14
-LIST   = 15
-UTF8   = 16
-UTF16  = 17
+T_STOP   = 0
+T_VOID   = 1
+T_BOOL_FALSE = 1
+T_BOOL   = 2
+T_BOOL_TRUE = 2
+T_BYTE   = 3
+T_I8     = 3
+T_DOUBLE = 4
+T_I16    = 6
+T_I32    = 8
+T_I64    = 10
+T_STRING = 11
+T_UTF7   = 11
+T_STRUCT = 12
+T_MAP    = 13
+T_SET    = 14
+T_LIST   = 15
+T_UTF8   = 16
+T_UTF16  = 17
 
 VERSION_MASK = -65536
 
@@ -57,39 +61,39 @@ class Codec(object):
 
     def __init__(self):
         self._dump_handlers = {
-            BOOL   : self._dump_bool,
-            BYTE   : self._dump_byte,
-            I08    : self._dump_byte,
-            DOUBLE : self._dump_double,
-            I16    : self._dump_i16,
-            I32    : self._dump_i32,
-            I64    : self._dump_i64,
-            STRING : self._dump_string,
-            UTF7   : self._dump_utf7,
-            STRUCT : self._dump_struct,
-            MAP    : self._dump_map,
-            SET    : self._dump_set,
-            LIST   : self._dump_list,
-            UTF8   : self._dump_utf8,
-            UTF16  : self._dump_utf16
+            T_BOOL   : self._dump_bool,
+            T_BYTE   : self._dump_byte,
+            T_I8    : self._dump_byte,
+            T_DOUBLE : self._dump_double,
+            T_I16    : self._dump_i16,
+            T_I32    : self._dump_i32,
+            T_I64    : self._dump_i64,
+            T_STRING : self._dump_string,
+            T_UTF7   : self._dump_utf7,
+            T_STRUCT : self._dump_struct,
+            T_MAP    : self._dump_map,
+            T_SET    : self._dump_set,
+            T_LIST   : self._dump_list,
+            T_UTF8   : self._dump_utf8,
+            T_UTF16  : self._dump_utf16
         }
 
         self._load_handlers = {
-            BOOL   : self._load_bool,
-            BYTE   : self._load_byte,
-            I08    : self._load_byte,
-            DOUBLE : self._load_double,
-            I16    : self._load_i16,
-            I32    : self._load_i32,
-            I64    : self._load_i64,
-            STRING : self._load_string,
-            UTF7   : self._load_utf7,
-            STRUCT : self._load_struct,
-            MAP    : self._load_map,
-            SET    : self._load_set,
-            LIST   : self._load_list,
-            UTF8   : self._load_utf8,
-            UTF16  : self._load_utf16
+            T_BOOL   : self._load_bool,
+            T_BYTE   : self._load_byte,
+            T_I8    : self._load_byte,
+            T_DOUBLE : self._load_double,
+            T_I16    : self._load_i16,
+            T_I32    : self._load_i32,
+            T_I64    : self._load_i64,
+            T_STRING : self._load_string,
+            T_UTF7   : self._load_utf7,
+            T_STRUCT : self._load_struct,
+            T_MAP    : self._load_map,
+            T_SET    : self._load_set,
+            T_LIST   : self._load_list,
+            T_UTF8   : self._load_utf8,
+            T_UTF16  : self._load_utf16
         }
 
 class Error(Exception): 
@@ -102,7 +106,7 @@ class BinaryCodec(Codec):
             self._dump_byte(ByteType, field.type._thrift_type_id, stream)
             self._dump_i16(I16Type, field.tag, stream)
             self.dump(field.type, getattr(object, name), stream)
-        self._dump_byte(ByteType, STOP, stream)
+        self._dump_byte(ByteType, T_STOP, stream)
 
     def _load_struct(self, thrift_type, stream):
         name_fields = thrift_type.fields().iteritems()
@@ -110,7 +114,7 @@ class BinaryCodec(Codec):
         vals = {}
         while True:
             type = self._load_byte(ByteType, stream)
-            if type == STOP:
+            if type == T_STOP:
                 break
             tag = self._load_i16(I16Type, stream)
             name, field = tag_to_field[tag]
@@ -191,17 +195,6 @@ class BinaryCodec(Codec):
             raise Error("missing version mask")
         return (name, type, sequence_id)
 
-    def _load_field(self, thrift_type, stream):
-        type = self._load_byte(stream)
-        id = self._load_i16(stream) if type != STOP else 0
-        return (None, type, id)
-
-    def _load_map_begin(self, thrift_type, stream):
-        ktype = self._load_byte(stream)
-        vtype = self._load_byte(stream)
-        size = self._load_i32(stream)
-        return (ktype, vtype, size)
-
     def _load_list(self, thrift_type, stream):
         etype = self._load_byte(stream)
         size = self._load_i32(stream)
@@ -227,16 +220,18 @@ class BinaryCodec(Codec):
         return result
 
     def _load_bool(self, thrift_type, stream):
+        """Load a byte string"""
         return self._load_byte(stream) != 0 
 
     def _load_byte(self, thrift_type, stream):
         buf = stream.read(1)
         if not buf:
             raise Error("unexpected end of stream")
-        val, = unpack('!b', buf)
+        val, = unpack('!B', buf)
         return val
 
     def _load_i16(self, thrift_type, stream):
+        """Load a signed 16 bit integer"""
         buf = stream.read(2)
         if len(buf) != 2:
             raise Error("unexpected end of stream")
@@ -244,6 +239,7 @@ class BinaryCodec(Codec):
         return val
 
     def _load_i32(self, thrift_type, stream):
+        """Load a signed 32 bit integer"""
         buf = stream.read(4)
         if len(buf) != 4:
             raise Error("unexpected end of stream")
@@ -251,6 +247,7 @@ class BinaryCodec(Codec):
         return val
 
     def _load_i64(self, thrift_type, stream):
+        """Load a signed 64 bit integer"""
         buf = stream.read(8)
         if len(buf) != 8:
             raise Error("unexpected end of stream")
@@ -258,6 +255,7 @@ class BinaryCodec(Codec):
         return val
 
     def _load_double(self, thrift_type, stream):
+        """Load a IEEE 754 double"""
         buf = stream.read(8)
         if len(buf) != 8:
             raise Error("unexpected end of stream")
@@ -265,6 +263,7 @@ class BinaryCodec(Codec):
         return val
 
     def _load_string(self, thrift_type, stream):
+        """Load a byte string"""
         num = self._load_i32(I32Type, stream)
         assert num >= 0
         if num > 0:
@@ -276,47 +275,241 @@ class BinaryCodec(Codec):
         return buf
 
 class CompactCodec(Codec):
-    pass
+    def _dump_struct(self, thrift_type, object, stream):
+        last_field_id = 0
+        for name, field in thrift_type.fields().iteritems():
+            # Boolean fields are written as part of the field into one byte:
+            if field.type._thrift_type_id == T_BOOL:
+                boolean_field = field
+                val = getattr(object, name)
+                the_type = T_BOOL_TRUE if val else T_BOOL_FALSE
+            else:  
+                the_type = field.type._thrift_type_id
+            if field.tag > last_field_id and ((field.tag - last_field_id) <= 15):
+                self._dump_byte(ByteType, ((field.tag - last_field_id) << 4) | the_type, stream)
+            else:
+                self._dump_byte(ByteType, the_type, stream)
+                self._dump_i16(I16Type, field.tag, stream)
+                self.dump(field.type, getattr(object, name), stream)
+                last_field_id = field.tag
+        self._dump_byte(ByteType, T_STOP, stream)
+
+    def _dump_seq(self, thrift_type, object, stream):
+        """Dump a set or a list of values"""
+        sz = len(object)
+        elem_type = thrift_type.value_type._thrift_type
+        if sz <= 14:
+            self._dump_byte(ByteType, (sz << 4) | elem_type, stream)
+        else:
+            self._dump_byte(ByteType, 0xF0 | elem_type, stream)
+            self._dump_varint(sz, stream)
+        for value in object:
+            self.dump(value_type, value, stream)
+
+    _dump_list = _dump_seq
+    _dump_set = _dump_seq
+
+    def _dump_varint(self, num, stream):
+        while True:
+            if (num & ~0x7F) == 0:
+                self._dump_byte(ByteType, num & 0xFF, stream) 
+                break
+            else:
+                self._dump_byte(ByteType, ((num & 0x7F) | 0x80), stream) 
+                num >>= 7
+
+    def _dump_map(self, thrift_type, object, stream):
+        sz = len(object)
+        if sz == 0:
+            self._dump_byte(ByteType, 0, stream)
+        else:
+            self._dump_varint(sz, stream)
+            self._dump_byte(ByteType, (thrift_type.key_type._thrift_type << 4) | thrift_type.value_type._thrift_type)
+        
+    def _dump_bool(self, thrift_type, object, stream):
+        self._dump_byte(ByteType, T_BOOL_TRUE if object else T_BOOL_FALSE, stream)
+
+    def _dump_i16(self, thrift_type, object, stream):
+        self._dump_varint(int_to_zigzag(object), stream)
+
+    def _dump_i32(self, thrift_type, object, stream):
+        self._dump_varint(int_to_zigzag(object), stream)
+
+    def _dump_i64(self, thrift_type, object, stream):
+        self._dump_varint(long_to_zigzag(object), stream)
+
+    def _dump_double(self, thrift_type, val, stream):
+        stream.write(pack("!d", val))
+
+    def _dump_utf8(self, thrift_type, val, stream):
+        self._dump_string(thrift_type, val.encode('utf-8'), stream)
+
+    def _dump_utf7(self, thrift_type, val, stream):
+        self._dump_string(thrift_type, val.encode('utf-7'), stream)
+
+    def _dump_utf16(self, thrift_type, val, stream):
+        self._dump_string(thrift_type, val.encode('utf-16'), stream)
+
+    def _dump_string(self, thrift_type, val, stream):
+        self._dump_varint(len(val), stream)
+        stream.write(val)
+
+    def _dump_byte(self, thrift_type, val, stream):
+        stream.write(pack("!B", val))
+       
+    def _load_bool(self, thrift_type, stream):
+        return self._load_byte(stream) != 0 
+
+    def _load_byte(self, thrift_type, stream):
+        buf = stream.read(1)
+        if not buf:
+            raise Error("unexpected end of stream")
+        val, = unpack('!B', buf)
+        return val
+
+    def _load_double(self, thrift_type, stream):
+        buf = stream.read(8)
+        if len(buf) != 8:
+            raise Error("unexpected end of stream")
+        val, = unpack('!d', buf)
+        return val
+
+    def _load_i16(self, thrift_type, stream):
+        return zigzag_to_int(self._load_varint(stream))
+
+    _load_i32 = _load_i16
+
+    def _load_i64(self, thrift_type, stream):
+        return zigzag_to_int(self._load_varint64(stream))
+
+    def _load_string(self, thrift_type, stream):
+        num = self._load_varint(stream)
+        buf = stream.read(num)
+        return buf
+
+    def _load_utf7(self, thrift_type, stream):
+        return self._load_string(thrift_type, stream).decode('utf-7')
+
+    def _load_utf8(self, thrift_type, stream):
+        return self._load_string(thrift_type, stream).decode('utf-8')
+
+    def _load_utf16(self, thrift_type, stream):
+        return self._load_string(thrift_type, stream).decode('utf-16')
+
+    def _load_struct(self, thrift_type, stream):
+        name_fields = thrift_type.fields().iteritems()
+        tag_to_field = dict((field.tag, (name, field)) for name, field in name_fields)
+        vals = {}
+        last_field_id = 0
+        while True:
+            modifier_type = self._load_byte(ByteType, stream)
+            type = modifier_type & 0x0f
+            if type == T_STOP:
+                break
+            modifier = (modifier_type & 0xf0) >> 4
+
+            if modifier == 0:
+                tag = self._load_i16(I16Type, stream)
+            else:
+                tag = modifier + last_field_id
+
+            name, field = tag_to_field[tag]
+            if field.type._thrift_type_id == T_BOOL:
+                vals[name] = True if (type & 0x0f) == T_BOOL_TRUE else False 
+            else:
+                vals[name] = self.load(field.type, stream)
+            last_field_id = tag
+        return thrift_type(**vals)
+
+    def _load_map(self, thrift_type, stream):
+        sz = self._load_varint(stream)
+        key_type = self._load_byte(stream)
+
+    def _load_seq(self, thrift_type, stream):
+        """Load a sequence container from a stream"""
+        sz_type = struct.unpack('!B', stream.read(1))
+        sz = (sz_type >> 4) & 0x0f
+        type = sz_type & 0x0f
+        if sz == 15:
+            sz = _load_varint(stream)
+        value_type = thrift_type.value_type
+        for i in xrange(size):
+            yield self.load(value_type, stream)
+
+    def _load_list(self, thrift_type, stream):
+        """Load a list from a stream"""
+        return list(self._load_seq(thrift_type, stream))
+
+    def _load_set(self, thrift_type, stream):
+        """Load a set from a stream"""
+        return set(self._load_seq(thrift_type, stream))
+
+    def _load_varint(self, stream):
+        """Load a varint"""
+        num = 0
+        shift = 0 
+        while True:
+            byte, = unpack('!B', stream.read(1))
+            num |= (byte & 0x7f) << shift
+            shift += 7
+            if not (byte & 0x80):
+                break
+        return num
     
+
+def long_to_zigzag(num):
+    """Convert a long to a zigzag integer"""
+    num = long(num)
+    return (num << 1) ^ (num >> 63)
+
+def int_to_zigzag(num):
+    """Convert an integer to zigzag integer"""
+    num = int(num)
+    return (num << 1) ^ (num >> 31)
+
+def zigzag_to_int(num):
+    """Convert a zigzag number to a normal number"""
+    return (num >> 1) ^ -(n & 1) 
+
 class Type(object):
     pass
 
 class I64Type(Type):
     """64 bit integers"""
-    _thrift_type_id = I64
+    _thrift_type_id = T_I64
 
 class I32Type(Type):
     """32 bit integers"""
-    _thrift_type_id = I32
+    _thrift_type_id = T_I32
 
 class I16Type(Type):
     """32 bit integers"""
-    _thrift_type_id = I16
+    _thrift_type_id = T_I16
 
 class I8Type(Type):
     """32 bit integers"""
-    _thrift_type_id = I08
+    _thrift_type_id = T_I8
 
 
 class ByteType(Type):
     """Bytes"""
-    _thrift_type_id = BYTE
+    _thrift_type_id = T_BYTE
 
 class DoubleType(Type):
     """64 bit doubles"""
-    _thrift_type_id = DOUBLE
+    _thrift_type_id = T_DOUBLE
 
 class UnicodeType(Type):
     """UnicodeType (encoded in binary as utf-8) variable length strings"""
-    _thrift_type_id = UTF8
+    _thrift_type_id = T_UTF8
 
 class ByteStringType(Type):
     """Binary variable length strings"""
-    _thrift_type_id = STRING
+    _thrift_type_id = T_STRING
 
 class BooleanType(Type):
     """Boolean values"""
-    _thrift_type_id = BOOL
+    _thrift_type_id = T_BOOL
 
 class Field(object):
     def __init__(self, type, tag, initial, optional):
@@ -350,7 +543,7 @@ class StructType(type):
 
 class Struct(Type):
     __metaclass__ = StructType
-    _thrift_type_id = STRUCT
+    _thrift_type_id = T_STRUCT
 
     def __init__(self, *args, **kwargs):
         if (len(args) > 1) or (args and kwargs):
@@ -393,21 +586,21 @@ class Struct(Type):
 
 class Exception(Struct, Exception):
     """Exception structures"""
-    _thrift_type_id = STRUCT
+    _thrift_type_id = T_STRUCT
 
 class Map(Type):
-    _thrift_type_id = MAP
+    _thrift_type_id = T_MAP
 
     key_type = None
     value_type = None
 
 class List(Type):
-    _thrift_type_id = LIST
+    _thrift_type_id = T_LIST
 
     value_type = None
 
 class Set(Type):
-    _thrift_type_id = SET
+    _thrift_type_id = T_SET
 
     value_type = None
 
