@@ -6,12 +6,11 @@ Rough goals:
  * Define & Export protocols using JSON, Python, Thrift IDL and YAML
  * More straightforward libraries (e.g. "thriftit.BinaryCodec()" instead of "thrift.protocol.TBinaryProtocol.TBinaryProtocolFactory()")
  * Try to fit in with Python better.  For example, prefer `dump` & `load` over `write` & `read` and prefer underscored names over camelcase.
- 
  * Cyclic structs (named an anti-feature on the Thrift Wiki):
 
           struct Cons { 
-              1: binary buf,
-              2: Cons next optional
+              1: binary head,
+              2: Cons tail optional
           }
 
  * Parameterized Structs / Containers
@@ -28,7 +27,7 @@ Rough goals:
               3: Tree<Expr> expr
           }
 
- * Pure Python ".thrift" Parser
+ * Pure Python `.thrift` Parser
  * Support alternative encodings where possible (Avro, Protocol Buffers, XDR, YAML, JSON)
  * Tornado plugins
 
@@ -36,6 +35,7 @@ Implemented so far:
 
  * Define protocol spec in JSON/YAML/Python
  * Binary codec
+ * Compact codec
  * Cyclic structs
  * Dynamically define structs in Python:
 
@@ -48,9 +48,9 @@ Implemented so far:
            HEAD = 3
            DELETE = 4
 
-        class HTTPRequest(thrift.Struct):
-            addr = thrift.Field(thrift.I64Type, 1, int, 0)
-            method = thrift.Field(thrift.I8Type, 2, MethodEnum, MethodEnum.GET)
-            uri = thrift.Field(thrift.ByteStringType, 3, str, '')
-            body = thriftit.Field(thrift.ByteStringType, 4, str, '')
+        class HTTPRequest(thriftit.Struct):
+            addr = thriftit.Field(thriftit.I64Type, 1, int, 0)
+            method = thriftit.Field(thriftit.I8Type, 2, MethodEnum, MethodEnum.GET)
+            uri = thriftit.Field(thriftit.ByteStringType, 3, str, '')
+            body = thriftitit.Field(thriftit.ByteStringType, 4, str, '')
 
