@@ -16,19 +16,15 @@ try:
 except ImportError:
     import simplejson as json
 
-T_STOP   = 0 # Struct End
-T_VOID   = 1 # ? 
-T_BOOL_FALSE = 1 
+# Type IDs
 T_BOOL   = 2 # Boolean 
-T_BOOL_TRUE = 2 # Overloaded to be Boolean True in Compact Protocol
-T_BYTE   = 3 
+T_BYTE   = 3 # Unsigned 8 Bit Integer
 T_I8     = 3 # Signed 8 Bit Integer
 T_DOUBLE = 4 # Signed 64 Bit Floating Point 
 T_I16    = 6 # Signed 16 Bit Integer
 T_I32    = 8 # Signed 32 Bit Integer
 T_I64    = 10 # Signed 64 Bit Integers
 T_STRING = 11 # Binary Strings
-T_UTF7   = 11 # ASCII Strings
 T_STRUCT = 12 # Structures (things with tagged fields)
 T_MAP    = 13 # Map, a container mapping from one Thrift Type value to another Thrift Type value
 T_SET    = 14 # Sets, a set of a Thrift Type values
@@ -36,17 +32,50 @@ T_LIST   = 15 # Lists, an array of Thrift Type values
 T_UTF8   = 16 # A UTF-8 string
 T_UTF16  = 17 # A UTF-16 string
 
+# Encoding Symbols (some of these are the same as Type IDs)
+
+SYM_STOP   = 0 # End of Struct/Message
+SYM_VOID   = 1 # ? 
+SYM_BOOL_FALSE = 1  
+SYM_BOOL = SYM_BOOL_TRUE = 2 # Overloaded to be Boolean True in Compact Protocol
+SYM_BYTE   = 3 # Signed 8 Bit Integer
+SYM_DOUBLE = 4 # Signed 64 Bit Floating Point 
+SYM_I16    = 6 # Signed 16 Bit Integer
+SYM_I32    = 8 # Signed 32 Bit Integer
+SYM_I64    = 10 # Signed 64 Bit Integers
+SYM_STRING = 11 # Binary Strings
+SYM_STRUCT = 12 # Structures (things with tagged fields)
+SYM_MAP    = 13 # Map, a container mapping from one Thrift Type value to another Thrift Type value
+SYM_SET    = 14 # Sets, a set of a Thrift Type values
+SYM_LIST   = 15 # Lists, an array of Thrift Type values
+
+_type_to_symbol = {
+    T_BOOL   : SYM_BOOL,
+    T_BYTE   : SYM_BYTE,
+    T_DOUBLE : SYM_DOUBLE,
+    T_I16    : SYM_I16,
+    T_I32    : SYM_I32,
+    T_I64    : SYM_I64,
+    T_STRING : SYM_STRING,
+    T_STRUCT : SYM_STRUCT,
+    T_MAP    : SYM_MAP,
+    T_SET    : SYM_SET,
+    T_LIST   : SYM_LIST,
+    T_UTF8   : SYM_STRING,
+    T_UTF16  : SYM_STRING,
+}
+
 VERSION_MASK = -65536
 
 class Codec(object):
     """Base codec class"""
     def dump(self, thrift_type, object, stream):
         """Encode an object to an output stream"""
-        return self._dump_handlers[thrift_type._thrift_type_id](thrift_type, object, stream)
+        return self._dump_handlers[thrift_type.thrift_type_id](thrift_type, object, stream)
 
     def load(self, thrift_type, stream):
         """Decode an object from an input stream"""
-        return self._load_handlers[thrift_type._thrift_type_id](thrift_type, stream)
+        return self._load_handlers[thrift_type.thrift_type_id](thrift_type, stream)
 
     def dumps(self, thrift_type, object):
         """Encode an object and return a bytestring"""
@@ -69,7 +98,6 @@ class Codec(object):
             T_I32    : self._dump_i32,
             T_I64    : self._dump_i64,
             T_STRING : self._dump_string,
-            T_UTF7   : self._dump_utf7,
             T_STRUCT : self._dump_struct,
             T_MAP    : self._dump_map,
             T_SET    : self._dump_set,
@@ -87,7 +115,6 @@ class Codec(object):
             T_I32    : self._load_i32,
             T_I64    : self._load_i64,
             T_STRING : self._load_string,
-            T_UTF7   : self._load_utf7,
             T_STRUCT : self._load_struct,
             T_MAP    : self._load_map,
             T_SET    : self._load_set,
@@ -100,37 +127,44 @@ class Error(Exception):
     pass
 
 class BinaryCodec(Codec):
-
+    """Implement the binary codec"""
     def _dump_struct(self, thrift_type, object, stream):
         for name, field in thrift_type.fields().iteritems():
-            self._dump_byte(ByteType, field.type._thrift_type_id, stream)
-            self._dump_i16(I16Type, field.tag, stream)
+            symbol = _type_to_symbol[field.type.thrift_type_id]
+            stream.write(pack('!BH', symbol, field.tag))
             self.dump(field.type, getattr(object, name), stream)
-        self._dump_byte(ByteType, T_STOP, stream)
+        stream.write(chr(SYM_STOP))
 
     def _load_struct(self, thrift_type, stream):
         name_fields = thrift_type.fields().iteritems()
         tag_to_field = dict((field.tag, (name, field)) for name, field in name_fields)
         vals = {}
         while True:
-            type, = unpack('!B', stream.read(1))
-            if type == T_STOP:
+            if ord(stream.read(1)) == SYM_STOP:
                 break
             tag, = unpack('!H', stream.read(2))
             name, field = tag_to_field[tag]
             vals[name] = self.load(field.type, stream)
         return thrift_type(**vals)
 
-    def _load_map(self, thrift_type, object, stream):
+    def _load_map(self, thrift_type, stream):
         key_type = thrift_type.key_type
         value_type = thrift_type.value_type
+        key_type_id, val_type_id, size = unpack('!BBi', stream.read(6))
+        result = thrift_type()
+        for i in xrange(size): 
+            key = self.load(key_type, stream)
+            value = self.load(value_type, stream)
+            result[key] = value
+        return result
 
     def _dump_map(self, thrift_type, object, stream):
         key_type = thrift_type.key_type
         value_type = thrift_type.value_type
        
-        stream.write(struct.pack('!BBI', key_type._thrift_type_id, value_type._thrift_type_id, len(object)))
-     
+        stream.write(pack('!BBi',
+            _type_to_symbol[key_type.thrift_type_id],
+            _type_to_symbol[value_type.thrift_type_id], len(object)))
         for key, value in object.iteritems():
             self.dump(key_type, key, stream)
             self.dump(value_type, value, stream)
@@ -138,14 +172,11 @@ class BinaryCodec(Codec):
     def _dump_utf8(self, thrift_type, object, stream): 
         self._dump_string(ByteStringType, object.encode('utf-8'), stream)
 
-    def _dump_utf7(self, thrift_type, object, stream): 
-        self._dump_string(ByteStringType, object.encode('utf-7'), stream)
-
     def _dump_utf16(self, thrift_type, object, stream): 
         self._dump_string(ByteStringType, object.encode('utf-16'), stream)
 
     def _dump_bool(self, thrift_type, val, stream):
-        self._dump_byte(ByteType, 1 if val else 0, stream)
+        stream.write(chr(1 if val else 0))
 
     def _dump_byte(self, thrift_type, val, stream):
         stream.write(pack("!B", val))
@@ -166,37 +197,31 @@ class BinaryCodec(Codec):
         stream.write(pack("!I", len(val)) + val)
 
     def _dump_seq(self, thrift_type, object, stream):
-        self._dump_byte(ByteType, ttype.value_type._thrift_type_id, stream)
-        self._dump_i32(size, stream)
+        sym = _type_to_symbol[thrift_type.value_type.thrift_type_id]
+        stream.write(pack('!BI', sym, len(object)))
         for value in object:
-            self.dump(value_type, value, stream)
+            self.dump(thrift_type.value_type, value, stream)
 
     _dump_set = _dump_seq
     _dump_list = _dump_seq
 
-    def _load_list(self, thrift_type, stream):
-        etype, = unpack('!B', stream.read(1))
-        size = self._load_i32(stream)
-        return (etype, size)
+    def _load_seq(self, thrift_type, stream):
+        etype, size = unpack('!BI', stream.read(5))
+        items = []
+        for i in xrange(size):
+            yield self.load(thrift_type.value_type, stream)
 
-    def _load_utf7(self, thrift_type, stream):
-        return self._load_string(thrift_type, stream).decode('utf-7')
+    def _load_list(self, thrift_type, stream):
+        return list(self._load_seq(thrift_type, stream))
+
+    def _load_set(self, thrift_type, stream):
+        return set(self._load_seq(thrift_type, stream))
 
     def _load_utf8(self, thrift_type, stream):
         return self._load_string(thrift_type, stream).decode('utf-8')
 
     def _load_utf16(self, thrift_type, stream):
         return self._load_string(thrift_type, stream).decode('utf-16')
-
-    def _load_set(self, thrift_type, stream):
-        etype, = unpack('!B', stream.read(1))
-        size = self._load_i32(stream)
-        result = set()
-        value_type = thrift_type.value_type
-        for i in xrange(size):
-            value = self.load(value_type, stream)
-            result.add(value)
-        return result
 
     def _load_bool(self, thrift_type, stream):
         """Load a byte string"""
@@ -262,27 +287,26 @@ class CompactCodec(Codec):
         
         for name, field in sorted(thrift_type.fields().iteritems(), key=_by_tag):
             # Boolean fields are written as part of the field into one byte:
-            if field.type._thrift_type_id == T_BOOL:
+            if field.type.thrift_type_id == T_BOOL:
                 boolean_field = field
                 val = getattr(object, name)
-                the_type = T_BOOL_TRUE if val else T_BOOL_FALSE
+                the_type = SYM_BOOL_TRUE if val else SYM_BOOL_FALSE
             else:  
-                the_type = field.type._thrift_type_id
+                the_type = field.type.thrift_type_id
             delta = field.tag - last_field_id
             if delta > 0 and delta <= 15:
                 stream.write(chr((delta << 4) | the_type))
             else:
-                stream.write(chr(the_type))
-                stream.write(pack('!H', field.tag))
-            if the_type != T_BOOL_FALSE and the_type != T_BOOL_TRUE:
+                stream.write(pack('!BH', the_type, field.tag))
+            if field.type.thrift_type_id != T_BOOL:
                 self.dump(field.type, getattr(object, name), stream)
             last_field_id = field.tag
-        self._dump_byte(ByteType, T_STOP, stream)
+        stream.write(chr(SYM_STOP))
 
     def _dump_seq(self, thrift_type, object, stream):
         """Dump a set or a list of values"""
         sz = len(object)
-        elem_type = thrift_type.value_type._thrift_type
+        elem_type = thrift_type.value_type.thrift_type_id
         if sz <= 14:
             stream.write(chr((sz << 4) | elem_type))
 
@@ -290,7 +314,7 @@ class CompactCodec(Codec):
             stream.write(chr(0xF0 | elem_type))
             self._dump_varint(sz, stream)
         for value in object:
-            self.dump(value_type, value, stream)
+            self.dump(thrift_type.value_type, value, stream)
 
     _dump_list = _dump_seq
     _dump_set = _dump_seq
@@ -305,12 +329,18 @@ class CompactCodec(Codec):
                 num >>= 7
 
     def _dump_map(self, thrift_type, object, stream):
-        sz = len(object)
-        if sz == 0:
-            stream.write(chr(0))
-        else:
-            self._dump_varint(sz, stream)
-            stream.write(chr((thrift_type.key_type._thrift_type << 4) | thrift_type.value_type._thrift_type))
+        size = len(object)
+        key_type = thrift_type.key_type
+        value_type = thrift_type.value_type
+        self._dump_varint(size, stream)
+        if size > 0:
+            key_type_id = _type_to_symbol[key_type.thrift_type_id]
+            value_type_id = _type_to_symbol[value_type.thrift_type_id]
+            kv_type_id = (key_type_id << 4) | value_type_id
+            stream.write(chr(kv_type_id))
+            for key, value in object.iteritems():
+                self.dump(key_type, key, stream)
+                self.dump(value_type, value, stream)
         
     def _dump_bool(self, thrift_type, object, stream):
         stream.write(chr(T_BOOL_TRUE if object else T_BOOL_FALSE, stream))
@@ -329,9 +359,6 @@ class CompactCodec(Codec):
 
     def _dump_utf8(self, thrift_type, val, stream):
         self._dump_string(thrift_type, val.encode('utf-8'), stream)
-
-    def _dump_utf7(self, thrift_type, val, stream):
-        self._dump_string(thrift_type, val.encode('utf-7'), stream)
 
     def _dump_utf16(self, thrift_type, val, stream):
         self._dump_string(thrift_type, val.encode('utf-16'), stream)
@@ -365,9 +392,6 @@ class CompactCodec(Codec):
         buf = stream.read(num)
         return buf
 
-    def _load_utf7(self, thrift_type, stream):
-        return self._load_string(thrift_type, stream).decode('utf-7')
-
     def _load_utf8(self, thrift_type, stream):
         return self._load_string(thrift_type, stream).decode('utf-8')
 
@@ -384,7 +408,7 @@ class CompactCodec(Codec):
             the_type = delta_type & 0x0f
             delta = (delta_type & 0xf0) >> 4
 
-            if the_type == T_STOP:
+            if the_type == SYM_STOP:
                 break
 
             if delta == 0:
@@ -393,8 +417,8 @@ class CompactCodec(Codec):
                 tag = delta + last_field_id
 
             name, field = tag_to_field[tag]
-            if the_type == T_BOOL_TRUE or the_type == T_BOOL_FALSE:
-                vals[name] = the_type == T_BOOL_TRUE
+            if the_type == SYM_BOOL_TRUE or the_type == SYM_BOOL_FALSE:
+                vals[name] = the_type == SYM_BOOL_TRUE
             else:
                 vals[name] = self.load(field.type, stream)
             last_field_id = tag
@@ -402,16 +426,22 @@ class CompactCodec(Codec):
 
     def _load_map(self, thrift_type, stream):
         sz = self._load_varint(stream)
-        key_type = ord(stream.read(1))
-        val_type = ord(stream.read(1))
+        result = thrift_type()
+        if sz > 0:
+            kv_type = ord(stream.read(1))
+            for i in xrange(sz):
+                key = self.load(thrift_type.key_type, stream)
+                value = self.load(thrift_type.value_type, stream) 
+                result[key] = value
+        return result
 
     def _load_seq(self, thrift_type, stream):
         """Load a sequence container from a stream"""
-        sz_type = ord(stream.read(1))
-        sz = (sz_type >> 4) & 0x0f
-        type = sz_type & 0x0f
-        if sz == 15:
-            sz = _load_varint(stream)
+        size_type = ord(stream.read(1))
+        size = (size_type >> 4) & 0x0f
+        type = size_type & 0x0f
+        if size == 15:
+            size = _load_varint(stream)
         value_type = thrift_type.value_type
         for i in xrange(size):
             yield self.load(value_type, stream)
@@ -432,7 +462,7 @@ class CompactCodec(Codec):
             byte = ord(stream.read(1))
             num |= (byte & 0x7f) << shift
             shift += 7
-            if not (byte & 0x80):
+            if (byte & 0x80) == 0:
                 break
         return num
     
@@ -452,43 +482,43 @@ def zigzag_to_int(num):
     return (num >> 1) ^ -(num & 1) 
 
 class Type(object):
-    pass
+    thrift_type_id = None
 
 class I64Type(Type):
     """64 bit integers"""
-    _thrift_type_id = T_I64
+    thrift_type_id = T_I64
 
 class I32Type(Type):
     """32 bit integers"""
-    _thrift_type_id = T_I32
+    thrift_type_id = T_I32
 
 class I16Type(Type):
     """32 bit integers"""
-    _thrift_type_id = T_I16
+    thrift_type_id = T_I16
 
 class I8Type(Type):
     """32 bit integers"""
-    _thrift_type_id = T_I8
+    thrift_type_id = T_I8
 
 class ByteType(Type):
     """Bytes"""
-    _thrift_type_id = T_BYTE
+    thrift_type_id = T_BYTE
 
 class DoubleType(Type):
     """64 bit doubles"""
-    _thrift_type_id = T_DOUBLE
+    thrift_type_id = T_DOUBLE
 
 class UnicodeType(Type):
     """UnicodeType (encoded in binary as utf-8) variable length strings"""
-    _thrift_type_id = T_STRING
+    thrift_type_id = T_STRING
 
 class ByteStringType(Type):
     """Binary variable length strings"""
-    _thrift_type_id = T_STRING
+    thrift_type_id = T_STRING
 
 class BooleanType(Type):
     """Boolean values"""
-    _thrift_type_id = T_BOOL
+    thrift_type_id = T_BOOL
 
 class Field(object):
     """A Struct Field"""
@@ -530,7 +560,7 @@ class StructType(type):
 class Struct(Type):
     """Struct Type (things with named, tagged fields)"""
     __metaclass__ = StructType
-    _thrift_type_id = T_STRUCT
+    thrift_type_id = T_STRUCT
 
     def __init__(self, *args, **kwargs):
         if (len(args) > 1) or (args and kwargs):
@@ -573,23 +603,32 @@ class Struct(Type):
 
 class Exception(Struct, Exception):
     """Exception structures"""
-    _thrift_type_id = T_STRUCT
+    thrift_type_id = T_STRUCT
 
-class Map(Type):
-    _thrift_type_id = T_MAP
+class MapType(dict, Type):
+    thrift_type_id = T_MAP
 
     key_type = None
     value_type = None
 
-class List(Type):
-    _thrift_type_id = T_LIST
+    @classmethod
+    def subtype(cls, key_type, value_type): 
+        name = '%sOf%sTo%s' % (cls.__name__, key_type.__name__, value_type.__name__)
+        return type(name, (cls, ), {'key_type': key_type, 'value_type': value_type})
 
+class _SeqType(Type):
     value_type = None
 
-class Set(Type):
-    _thrift_type_id = T_SET
+    @classmethod
+    def subtype(cls, value_type):
+        name = value_type.__name__ + 'Of' + cls.__name__
+        return type(name, (cls, ), {'value_type': value_type})
 
-    value_type = None
+class ListType(list, _SeqType):
+    thrift_type_id = T_LIST
+
+class SetType(set, _SeqType):
+    thrift_type_id = T_SET
 
 class ServiceType(type):
     pass
@@ -689,7 +728,7 @@ def _handle_struct(struct, atom, context):
                 set_type_name = "SetOf%s" % (value_type_name.title(), )
                 if isinstance(set_type_name, unicode):
                     set_type_name = set_type_name.encode('utf-8')
-                field_type = type(set_type_name, (Set, ), {'value_type': context[value_type_name]})
+                field_type = type(set_type_name, (SetType, ), {'value_type': context[value_type_name]})
             elif type_name == "map":
                 value_type_name = options["value"]
                 key_type_name = options["key"]
@@ -730,6 +769,7 @@ _atom_type_to_handler = {
 
 _default_types = {
     'byte': ByteType,
+    'i8': I8Type,
     'i16': I16Type,
     'i32': I32Type,
     'i64': I64Type,
