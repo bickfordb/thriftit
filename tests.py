@@ -33,9 +33,9 @@ class Foo(thriftit.Struct):
     friends = thriftit.Field(thriftit.SetType.subtype(thriftit.UnicodeType), 11, set, False)
     age_to_person = thriftit.Field(thriftit.MapType.subtype(thriftit.DoubleType, thriftit.UnicodeType), 12, dict, False)
             
-class CodecTestCase(unittest.TestCase):
-
-    def _run_test(self, codec):
+class CodecTestCase:
+    def test_struct(self):
+        codec = self.codec
         f = Foo(num=25.1, msg=u'Hi, how are you', bool_true=True, bool_false=False, int_large=2**31 - 1, int_small=5, int_neg=-23, long_large=2**62, long_neg=-44, numbers=[13.5, 25.3], friends=set(['Alice', 'Bob']), age_to_person={15:'Alice', 16: 'Bob'})
         self.assertEquals(f.msg, u'Hi, how are you')
         self.assertEquals(f.num, 25.1)
@@ -55,13 +55,48 @@ class CodecTestCase(unittest.TestCase):
         self.assertEquals(g.friends, f.friends)
         self.assertEquals(g.numbers, f.numbers)
 
-class BinaryCodecTestCase(CodecTestCase):
-    def test(self):
-        self._run_test(thriftit.BinaryCodec())
+    def test_boolean(self):
+        self._assert_round_trip(thriftit.BooleanType, True)
+        self._assert_round_trip(thriftit.BooleanType, False)
 
-class CompactCodecTestCase(CodecTestCase):
-    def test(self):
-        self._run_test(thriftit.CompactCodec())
+    def test_i16(self):
+        for number in [-1, 0, 1, 1 << 14, -1 * (1 << 14)]:
+            self._assert_round_trip(thriftit.I16Type, number)
+
+    def test_i32(self):
+        for number in [-1, 0, 1, 1 << 30, -1 * (1 << 30)]:
+            self._assert_round_trip(thriftit.I32Type, number)
+
+    def test_i64(self):
+        for number in [-1, 0, 1, 1 << 62, -1 * (1 << 62)]:
+            self._assert_round_trip(thriftit.I64Type, number)
+
+    def test_byestring(self):
+        self._assert_round_trip(thriftit.ByteStringType, '')
+        self._assert_round_trip(thriftit.ByteStringType, chr(244))
+        self._assert_round_trip(thriftit.ByteStringType, chr(0))
+        self._assert_round_trip(thriftit.ByteStringType, 'hi how are you')
+
+    def test_unicode(self):
+        self._assert_round_trip(thriftit.UnicodeType, u'')
+        self._assert_round_trip(thriftit.UnicodeType, u'hi how are you')
+        self._assert_round_trip(thriftit.UnicodeType, u'hi  how are you')
+
+
+    def _assert_round_trip(self, thrift_type, value):
+        buf = self.codec.dumps(thrift_type, value)
+        expected_value = self.codec.loads(thrift_type, buf)
+        self.assertEquals(value, expected_value)
+
+class BinaryCodecTestCase(CodecTestCase, unittest.TestCase):
+    @property
+    def codec(self):
+        return thriftit.BinaryCodec()
+
+class CompactCodecTestCase(CodecTestCase, unittest.TestCase):
+    @property
+    def codec(self):
+        return thriftit.CompactCodec()
 
 if __name__ == '__main__':
     unittest.main()
